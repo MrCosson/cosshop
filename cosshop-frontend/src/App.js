@@ -15,8 +15,8 @@ import {
 } from "@dnd-kit/sortable";
 import { CSS } from "@dnd-kit/utilities";
 
-//const API = window.location.origin + "/api";
-const API = "http://localhost:8000/api";
+const API = window.location.origin + "/api";
+//const API = "http://localhost:8000/api";
 
 function formatDate(dateString) {
   if (!dateString) return "";
