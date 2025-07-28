@@ -23,6 +23,13 @@ class GroceryHistoryListView(generics.ListAPIView):
             return GroceryHistory.objects.filter(name__istartswith=q).order_by('-last_added')[:5]
         return GroceryHistory.objects.none()
 
+class GroceryHistoryListAllView(generics.ListAPIView):
+    serializer_class = GroceryHistorySerializer
+
+    def get_queryset(self):
+        # Sinon, renvoyer TOUT l’historique pour la vue “historique”
+        return GroceryHistory.objects.all().order_by('-last_added')
+
 class GroceryItemDetailView(generics.RetrieveUpdateDestroyAPIView):
     queryset = GroceryItem.objects.all()
     serializer_class = GroceryItemSerializer

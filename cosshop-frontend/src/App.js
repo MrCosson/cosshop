@@ -1,6 +1,7 @@
 import React, { useEffect, useState, useRef } from "react";
 
-const API = window.location.origin + "/api";
+//const API = window.location.origin + "/api";
+const API = "http://localhost:8000/api";
 
 function formatDate(dateString) {
   if (!dateString) return "";
@@ -17,6 +18,7 @@ function App() {
   const inputRef = useRef();
   const [showHistory, setShowHistory] = useState(false);
   const [fullHistory, setFullHistory] = useState([]);
+  const [toast, setToast] = useState(null);
 
   useEffect(() => {
     fetch(`${API}/items/`)
@@ -35,9 +37,14 @@ function App() {
   }, [input]);
 
   const fetchFullHistory = () => {
-    fetch(`${API}/history/`)
+    fetch(`${API}/historyall/`)
       .then((res) => res.json())
       .then((data) => setFullHistory(data));
+  };
+
+  const showToast = (message) => {
+    setToast(message);
+    setTimeout(() => setToast(null), 2000); // Affiche 2 secondes
   };
 
   const addItem = (e) => {
@@ -69,6 +76,7 @@ function App() {
         setItems([...items, data]);
         setInput("");
         setSuggestions([]);
+        showToast(`Article ${data.name} ajouté !`);
         inputRef.current.focus();
       })
       .catch((err) => {
@@ -84,6 +92,41 @@ function App() {
     fetch(`${API}/items/${id}/`, { method: "DELETE" }).then(() => {
       setItems(items.filter((i) => i.id !== id));
     });
+  };
+
+  const addItemFromHistory = (name) => {
+    if (
+      items.some(
+        (item) => item.name.toLowerCase() === name.trim().toLowerCase()
+      )
+    ) {
+      alert("Cet article est déjà dans la liste !");
+      return;
+    }
+    fetch(`${API}/items/`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ name }),
+    })
+      .then((res) => {
+        if (!res.ok) {
+          return res.json().then((err) => {
+            throw err;
+          });
+        }
+        return res.json();
+      })
+      .then((data) => {
+        setItems([...items, data]);
+        // setShowHistory(false); // ferme la modale si tu veux
+        showToast(`Article ${data.name} ajouté !`);
+      })
+      .catch((err) => {
+        alert(
+          err?.name?.[0] ||
+            "Erreur lors de l’ajout. L’article est peut-être déjà présent."
+        );
+      });
   };
 
   // Toggle checked state for an item
@@ -366,12 +409,16 @@ function App() {
                 fullHistory.map((h) => (
                   <li
                     key={h.id}
+                    onClick={() => addItemFromHistory(h.name)}
                     style={{
                       padding: "9px 0",
                       borderBottom: "1px solid #f1f1f1",
                       fontSize: 17,
                       color: "#333",
+                      cursor: "pointer",
+                      userSelect: "none",
                     }}
+                    title="Ajouter à la liste"
                   >
                     {h.name}
                     <div style={{ fontSize: 12, color: "#bbb", marginTop: 1 }}>
@@ -382,6 +429,28 @@ function App() {
               )}
             </ul>
           </div>
+        </div>
+      )}
+      {toast && (
+        <div
+          style={{
+            position: "fixed",
+            bottom: 24,
+            left: "50%",
+            transform: "translateX(-50%)",
+            background: "#2ecc40",
+            color: "#fff",
+            padding: "14px 32px",
+            borderRadius: 30,
+            fontWeight: 500,
+            boxShadow: "0 4px 18px #0003",
+            fontSize: 17,
+            zIndex: 10000,
+            transition: "opacity 0.3s",
+            opacity: toast ? 1 : 0,
+          }}
+        >
+          {toast}
         </div>
       )}
     </div>
