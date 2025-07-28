@@ -106,7 +106,7 @@ function App() {
 
   return (
     <div
-      style={{ maxWidth: 500, margin: "40px auto", fontFamily: "sans-serif" }}
+      style={{ maxWidth: 500, margin: "40px auto", fontFamily: "sans-serif", padding: "0 4vw" }}
     >
       <h1
         style={{ textAlign: "center", fontWeight: 300, letterSpacing: "2px" }}
