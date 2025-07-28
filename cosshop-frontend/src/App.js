@@ -15,6 +15,8 @@ function App() {
   const [input, setInput] = useState("");
   const [suggestions, setSuggestions] = useState([]);
   const inputRef = useRef();
+  const [showHistory, setShowHistory] = useState(false);
+  const [fullHistory, setFullHistory] = useState([]);
 
   useEffect(() => {
     fetch(`${API}/items/`)
@@ -31,6 +33,12 @@ function App() {
       setSuggestions([]);
     }
   }, [input]);
+
+  const fetchFullHistory = () => {
+    fetch(`${API}/history/`)
+      .then((res) => res.json())
+      .then((data) => setFullHistory(data));
+  };
 
   const addItem = (e) => {
     e.preventDefault();
@@ -275,6 +283,107 @@ function App() {
           </li>
         ))}
       </ul>
+      <button
+        onClick={() => {
+          fetchFullHistory();
+          setShowHistory(true);
+        }}
+        style={{
+          marginBottom: 16,
+          background: "#f1f1f1",
+          color: "#222",
+          border: "none",
+          borderRadius: 8,
+          padding: "8px 16px",
+          fontSize: 16,
+          cursor: "pointer",
+          width: "100%",
+          fontWeight: 500,
+        }}
+      >
+        Voir l’historique
+      </button>
+
+      {showHistory && (
+        <div
+          style={{
+            position: "fixed",
+            top: 0,
+            left: 0,
+            right: 0,
+            bottom: 0,
+            background: "rgba(0,0,0,0.28)",
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "center",
+            zIndex: 9999,
+          }}
+        >
+          <div
+            style={{
+              background: "#fff",
+              borderRadius: 16,
+              boxShadow: "0 4px 32px #3332",
+              padding: 24,
+              maxWidth: 340,
+              width: "90%",
+              maxHeight: "80vh",
+              overflowY: "auto",
+              position: "relative",
+            }}
+          >
+            <button
+              onClick={() => setShowHistory(false)}
+              style={{
+                position: "absolute",
+                top: 8,
+                right: 12,
+                background: "none",
+                border: "none",
+                fontSize: 24,
+                color: "#888",
+                cursor: "pointer",
+              }}
+            >
+              ×
+            </button>
+            <h2
+              style={{
+                fontSize: 22,
+                fontWeight: 400,
+                margin: "0 0 14px 0",
+                textAlign: "center",
+              }}
+            >
+              Historique des articles
+            </h2>
+            <ul style={{ padding: 0, listStyle: "none", margin: 0 }}>
+              {fullHistory.length === 0 ? (
+                <li style={{ color: "#aaa", textAlign: "center" }}>
+                  Aucun historique...
+                </li>
+              ) : (
+                fullHistory.map((h) => (
+                  <li
+                    key={h.id}
+                    style={{
+                      padding: "9px 0",
+                      borderBottom: "1px solid #f1f1f1",
+                      fontSize: 17,
+                      color: "#333",
+                    }}
+                  >
+                    {h.name}
+                    <div style={{ fontSize: 12, color: "#bbb", marginTop: 1 }}>
+                      {formatDate(h.last_added)}
+                    </div>
+                  </li>
+                ))
+              )}
+            </ul>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
