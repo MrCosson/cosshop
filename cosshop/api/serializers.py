@@ -4,7 +4,7 @@ from .models import GroceryItem, GroceryHistory
 class GroceryItemSerializer(serializers.ModelSerializer):
     class Meta:
         model = GroceryItem
-        fields = ['id', 'name', 'added_at', 'checked']
+        fields = ['id', 'name', 'added_at', 'checked', 'order']
 
 class GroceryHistorySerializer(serializers.ModelSerializer):
     class Meta:

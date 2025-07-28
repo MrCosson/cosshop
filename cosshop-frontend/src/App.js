@@ -1,7 +1,22 @@
 import React, { useEffect, useState, useRef } from "react";
 
-const API = window.location.origin + "/api";
-//const API = "http://localhost:8000/api";
+import {
+  DndContext,
+  closestCenter,
+  PointerSensor,
+  useSensor,
+  useSensors,
+} from "@dnd-kit/core";
+import {
+  arrayMove,
+  SortableContext,
+  useSortable,
+  verticalListSortingStrategy,
+} from "@dnd-kit/sortable";
+import { CSS } from "@dnd-kit/utilities";
+
+//const API = window.location.origin + "/api";
+const API = "http://localhost:8000/api";
 
 function formatDate(dateString) {
   if (!dateString) return "";
@@ -9,6 +24,93 @@ function formatDate(dateString) {
   const day = String(d.getDate()).padStart(2, "0");
   const month = String(d.getMonth() + 1).padStart(2, "0");
   return `${day}/${month}`;
+}
+
+function SortableItem({ item, toggleChecked, deleteItem }) {
+  const {
+    attributes,
+    listeners,
+    setNodeRef,
+    transform,
+    transition,
+    isDragging,
+  } = useSortable({ id: item.id });
+
+  return (
+    <li
+      ref={setNodeRef}
+      {...attributes}
+      {...listeners}
+      onClick={() => toggleChecked(item.id, item.checked)}
+      style={{
+        background: item.checked ? "#c0ffcb" : "#f8f8f8",
+        color: item.checked ? "#198754" : "#222",
+        borderRadius: 8,
+        marginBottom: 8,
+        padding: "12px 8px",
+        display: "flex",
+        alignItems: "center",
+        justifyContent: "space-between",
+        fontSize: 18,
+        cursor: isDragging ? "grabbing" : "pointer",
+        textDecoration: item.checked ? "line-through" : "none",
+        opacity: item.checked ? 0.7 : 1,
+        boxShadow: isDragging ? "0 4px 20px #2222" : "",
+        transform: CSS.Transform.toString(transform),
+        transition,
+        userSelect: "none",
+      }}
+    >
+      <div
+        style={{
+          display: "flex",
+          alignItems: "center",
+          justifyContent: "space-between",
+          gap: 12,
+          flexWrap: "wrap",
+          width: "100%",
+        }}
+      >
+        <span
+          style={{
+            wordBreak: "break-word",
+            whiteSpace: "normal",
+            flex: "1 1 auto",
+            minWidth: 0,
+          }}
+        >
+          {item.name}
+        </span>
+        <span
+          style={{
+            fontSize: 13,
+            color: "#999",
+            fontWeight: 400,
+            whiteSpace: "nowrap",
+            flexShrink: 0,
+            marginLeft: 8,
+          }}
+        >
+          {formatDate(item.added_at)}
+        </span>
+      </div>
+      <button
+        onClick={(e) => {
+          e.stopPropagation();
+          deleteItem(item.id);
+        }}
+        style={{
+          background: "none",
+          border: "none",
+          fontSize: 22,
+          color: "#cc2b2b",
+          cursor: "pointer",
+        }}
+      >
+        ×
+      </button>
+    </li>
+  );
 }
 
 function App() {
@@ -19,6 +121,15 @@ function App() {
   const [showHistory, setShowHistory] = useState(false);
   const [fullHistory, setFullHistory] = useState([]);
   const [toast, setToast] = useState(null);
+
+  // DND-kit
+  const sensors = useSensors(
+    useSensor(PointerSensor, {
+      activationConstraint: {
+        distance: 8,
+      },
+    })
+  );
 
   useEffect(() => {
     fetch(`${API}/items/`)
@@ -44,13 +155,12 @@ function App() {
 
   const showToast = (message) => {
     setToast(message);
-    setTimeout(() => setToast(null), 2000); // Affiche 2 secondes
+    setTimeout(() => setToast(null), 2000);
   };
 
   const addItem = (e) => {
     e.preventDefault();
     if (input.trim() === "") return;
-    // Vérifie unicité côté frontend (insensible à la casse)
     if (
       items.some(
         (item) => item.name.toLowerCase() === input.trim().toLowerCase()
@@ -80,7 +190,6 @@ function App() {
         inputRef.current.focus();
       })
       .catch((err) => {
-        // Gestion de l’erreur backend (ex : si 2 navigateurs ouverts)
         alert(
           err?.name?.[0] ||
             "Erreur lors de l’ajout. L’article est peut-être déjà présent."
@@ -118,7 +227,6 @@ function App() {
       })
       .then((data) => {
         setItems([...items, data]);
-        // setShowHistory(false); // ferme la modale si tu veux
         showToast(`Article ${data.name} ajouté !`);
       })
       .catch((err) => {
@@ -129,7 +237,6 @@ function App() {
       });
   };
 
-  // Toggle checked state for an item
   const toggleChecked = (id, checked) => {
     fetch(`${API}/items/${id}/`, {
       method: "PATCH",
@@ -142,7 +249,6 @@ function App() {
       });
   };
 
-  // Delete all checked items
   const deleteAllChecked = () => {
     const checkedItems = items.filter((item) => item.checked);
     Promise.all(
@@ -158,6 +264,27 @@ function App() {
     setInput(name);
     setSuggestions([]);
     inputRef.current.focus();
+  };
+
+  const persistOrder = (orderedItems) => {
+    fetch(`${API}/items/reorder/`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        ids: orderedItems.map((item) => item.id),
+      }),
+    });
+  };
+
+  // dnd-kit: handle drag end
+  const handleDragEnd = (event) => {
+    const { active, over } = event;
+    if (!over || active.id === over.id) return;
+    const oldIndex = items.findIndex((i) => i.id === active.id);
+    const newIndex = items.findIndex((i) => i.id === over.id);
+    const newItems = arrayMove(items, oldIndex, newIndex);
+    setItems(newItems);
+    persistOrder(newItems);
   };
 
   return (
@@ -179,7 +306,7 @@ function App() {
           ref={inputRef}
           type="text"
           value={input}
-          placeholder="Add Item..."
+          placeholder="Ajouter un article..."
           autoFocus
           onChange={(e) => setInput(e.target.value)}
           style={{
@@ -248,84 +375,33 @@ function App() {
             width: "100%",
           }}
         >
-          Delete all checked
+          Delete all checked.
         </button>
       )}
 
-      <ul style={{ padding: 0, listStyle: "none" }}>
-        {items.map((item) => (
-          <li
-            key={item.id}
-            onClick={() => toggleChecked(item.id, item.checked)}
-            style={{
-              background: item.checked ? "#c0ffcb" : "#f8f8f8",
-              color: item.checked ? "#198754" : "#222",
-              borderRadius: 8,
-              marginBottom: 8,
-              padding: "12px 8px",
-              display: "flex",
-              alignItems: "center",
-              justifyContent: "space-between",
-              fontSize: 18,
-              cursor: "pointer",
-              textDecoration: item.checked ? "line-through" : "none",
-              opacity: item.checked ? 0.7 : 1,
-              transition: "background 0.15s, color 0.15s, opacity 0.15s",
-            }}
-          >
-            {/* Nom + date dans une div flex */}
-            <div
-              style={{
-                display: "flex",
-                alignItems: "center",
-                justifyContent: "space-between",
-                gap: 12,
-                flexWrap: "wrap",
-                width: "100%",
-              }}
-            >
-              <span
-                style={{
-                  wordBreak: "break-word",
-                  whiteSpace: "normal",
-                  flex: "1 1 auto",
-                  minWidth: 0,
-                }}
-              >
-                {item.name}
-              </span>
-              <span
-                style={{
-                  fontSize: 13,
-                  color: "#999",
-                  fontWeight: 400,
-                  whiteSpace: "nowrap",
-                  flexShrink: 0,
-                  marginLeft: 8,
-                }}
-              >
-                {formatDate(item.added_at)}
-              </span>
-            </div>
+      {/* DRAG & DROP */}
+      <DndContext
+        sensors={sensors}
+        collisionDetection={closestCenter}
+        onDragEnd={handleDragEnd}
+      >
+        <SortableContext
+          items={items.map((i) => i.id)}
+          strategy={verticalListSortingStrategy}
+        >
+          <ul style={{ padding: 0, listStyle: "none" }}>
+            {items.map((item) => (
+              <SortableItem
+                key={item.id}
+                item={item}
+                toggleChecked={toggleChecked}
+                deleteItem={deleteItem}
+              />
+            ))}
+          </ul>
+        </SortableContext>
+      </DndContext>
 
-            <button
-              onClick={(e) => {
-                e.stopPropagation();
-                deleteItem(item.id);
-              }}
-              style={{
-                background: "none",
-                border: "none",
-                fontSize: 22,
-                color: "#cc2b2b",
-                cursor: "pointer",
-              }}
-            >
-              ×
-            </button>
-          </li>
-        ))}
-      </ul>
       <button
         onClick={() => {
           fetchFullHistory();
@@ -378,18 +454,21 @@ function App() {
             <button
               onClick={() => setShowHistory(false)}
               style={{
-                position: "absolute",
-                top: 8,
+                position: "sticky",
+                top: 10,
                 right: 12,
                 background: "none",
                 border: "none",
-                fontSize: 24,
+                fontSize: 30,
                 color: "#888",
                 cursor: "pointer",
+                float: "right",
+                zIndex: 10,
               }}
             >
               ×
             </button>
+
             <h2
               style={{
                 fontSize: 22,

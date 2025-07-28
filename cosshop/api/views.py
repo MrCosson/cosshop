@@ -6,7 +6,7 @@ from .serializers import GroceryItemSerializer, GroceryHistorySerializer
 from django.db.models import Q
 
 class GroceryItemListCreateView(generics.ListCreateAPIView):
-    queryset = GroceryItem.objects.all().order_by('added_at')
+    queryset = GroceryItem.objects.all().order_by('order', 'added_at')
     serializer_class = GroceryItemSerializer
 
     def perform_create(self, serializer):
@@ -33,3 +33,18 @@ class GroceryHistoryListAllView(generics.ListAPIView):
 class GroceryItemDetailView(generics.RetrieveUpdateDestroyAPIView):
     queryset = GroceryItem.objects.all()
     serializer_class = GroceryItemSerializer
+
+from rest_framework.decorators import api_view
+from rest_framework.response import Response
+from rest_framework import status
+
+@api_view(['POST'])
+def reorder_items(request):
+    """
+    Attend : {"ids": [id1, id2, id3, ...]}
+    Met à jour le champ 'order' de chaque item.
+    """
+    ids = request.data.get("ids", [])
+    for position, item_id in enumerate(ids):
+        GroceryItem.objects.filter(id=item_id).update(order=position)
+    return Response({"status": "ok"})
