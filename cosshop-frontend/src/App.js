@@ -1,7 +1,7 @@
 import React, { useEffect, useState, useRef } from "react";
 
-//const API = window.location.origin + "/api";
-const API = "http://localhost:8000/api";
+const API = window.location.origin + "/api";
+//const API = "http://localhost:8000/api";
 
 function formatDate(dateString) {
   if (!dateString) return "";
