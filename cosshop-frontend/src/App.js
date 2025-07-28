@@ -36,7 +36,11 @@ function App() {
     e.preventDefault();
     if (input.trim() === "") return;
     // Vérifie unicité côté frontend (insensible à la casse)
-    if (items.some(item => item.name.toLowerCase() === input.trim().toLowerCase())) {
+    if (
+      items.some(
+        (item) => item.name.toLowerCase() === input.trim().toLowerCase()
+      )
+    ) {
       alert("Cet article est déjà dans la liste !");
       return;
     }
@@ -47,7 +51,9 @@ function App() {
     })
       .then((res) => {
         if (!res.ok) {
-          return res.json().then(err => { throw err; });
+          return res.json().then((err) => {
+            throw err;
+          });
         }
         return res.json();
       })
@@ -61,11 +67,10 @@ function App() {
         // Gestion de l’erreur backend (ex : si 2 navigateurs ouverts)
         alert(
           err?.name?.[0] ||
-          "Erreur lors de l’ajout. L’article est peut-être déjà présent."
+            "Erreur lors de l’ajout. L’article est peut-être déjà présent."
         );
       });
   };
-  
 
   const deleteItem = (id) => {
     fetch(`${API}/items/${id}/`, { method: "DELETE" }).then(() => {
@@ -106,7 +111,12 @@ function App() {
 
   return (
     <div
-      style={{ maxWidth: 500, margin: "40px auto", fontFamily: "sans-serif", padding: "0 4vw" }}
+      style={{
+        maxWidth: 500,
+        margin: "40px auto",
+        fontFamily: "sans-serif",
+        padding: "0 4vw",
+      }}
     >
       <h1
         style={{ textAlign: "center", fontWeight: 300, letterSpacing: "2px" }}
@@ -217,18 +227,18 @@ function App() {
               style={{
                 display: "flex",
                 alignItems: "center",
-                gap: 12, // espace entre nom et date
-                minWidth: 0, // utile pour que le texte ne déborde pas
-                flex: 1,
+                justifyContent: "space-between",
+                gap: 12,
+                flexWrap: "wrap",
+                width: "100%",
               }}
             >
               <span
                 style={{
-                  whiteSpace: "nowrap",
-                  overflow: "hidden",
-                  textOverflow: "ellipsis",
-                  maxWidth: 200, // adapte si tu veux
-                  display: "inline-block",
+                  wordBreak: "break-word",
+                  whiteSpace: "normal",
+                  flex: "1 1 auto",
+                  minWidth: 0,
                 }}
               >
                 {item.name}
@@ -240,11 +250,13 @@ function App() {
                   fontWeight: 400,
                   whiteSpace: "nowrap",
                   flexShrink: 0,
+                  marginLeft: 8,
                 }}
               >
                 {formatDate(item.added_at)}
               </span>
             </div>
+
             <button
               onClick={(e) => {
                 e.stopPropagation();
