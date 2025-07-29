@@ -4,6 +4,8 @@ from rest_framework.views import APIView
 from .models import GroceryItem, GroceryHistory
 from .serializers import GroceryItemSerializer, GroceryHistorySerializer
 from django.db.models import Q
+from rest_framework.decorators import api_view
+from rest_framework import status
 
 class GroceryItemListCreateView(generics.ListCreateAPIView):
     queryset = GroceryItem.objects.all().order_by('order', 'added_at')
@@ -34,9 +36,9 @@ class GroceryItemDetailView(generics.RetrieveUpdateDestroyAPIView):
     queryset = GroceryItem.objects.all()
     serializer_class = GroceryItemSerializer
 
-from rest_framework.decorators import api_view
-from rest_framework.response import Response
-from rest_framework import status
+class GroceryHistoryDeleteView(generics.DestroyAPIView):
+    queryset = GroceryHistory.objects.all()
+    serializer_class = GroceryHistorySerializer
 
 @api_view(['POST'])
 def reorder_items(request):

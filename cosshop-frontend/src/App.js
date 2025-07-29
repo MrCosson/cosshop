@@ -488,21 +488,61 @@ function App() {
                 fullHistory.map((h) => (
                   <li
                     key={h.id}
-                    onClick={() => addItemFromHistory(h.name)}
                     style={{
                       padding: "9px 0",
                       borderBottom: "1px solid #f1f1f1",
                       fontSize: 17,
                       color: "#333",
+                      display: "flex",
+                      alignItems: "center",
+                      justifyContent: "space-between",
                       cursor: "pointer",
                       userSelect: "none",
                     }}
                     title="Ajouter à la liste"
                   >
-                    {h.name}
-                    <div style={{ fontSize: 12, color: "#bbb", marginTop: 1 }}>
-                      {formatDate(h.last_added)}
-                    </div>
+                    <span
+                      onClick={() => addItemFromHistory(h.name)}
+                      style={{ flex: 1 }}
+                    >
+                      {h.name}
+                      <div
+                        style={{ fontSize: 12, color: "#bbb", marginTop: 1 }}
+                      >
+                        {formatDate(h.last_added)}
+                      </div>
+                    </span>
+                    <button
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        if (
+                          window.confirm(
+                            "Supprimer cet article de l'historique ?"
+                          )
+                        ) {
+                          fetch(`${API}/history/${h.id}/`, {
+                            method: "DELETE",
+                          }).then(() => {
+                            setFullHistory(
+                              fullHistory.filter((x) => x.id !== h.id)
+                            );
+                            showToast("Article supprimé de l'historique !");
+                          });
+                        }
+                      }}
+                      style={{
+                        background: "none",
+                        border: "none",
+                        color: "#cc2b2b",
+                        fontSize: 22,
+                        cursor: "pointer",
+                        marginLeft: 10,
+                        lineHeight: 1,
+                      }}
+                      title="Supprimer de l'historique"
+                    >
+                      🗑️
+                    </button>
                   </li>
                 ))
               )}

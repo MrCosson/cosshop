@@ -7,4 +7,5 @@ urlpatterns = [
     path('history/', views.GroceryHistoryListView.as_view()),
     path('historyall/', views.GroceryHistoryListAllView.as_view()),
     path('items/reorder/', views.reorder_items),
+    path('history/<int:pk>/', views.GroceryHistoryDeleteView.as_view()),
 ]
