@@ -8,13 +8,18 @@ from rest_framework.decorators import api_view
 from rest_framework import status
 
 class GroceryItemListCreateView(generics.ListCreateAPIView):
-    queryset = GroceryItem.objects.all().order_by('order', 'added_at')
     serializer_class = GroceryItemSerializer
 
+    def get_queryset(self):
+        list_name = self.request.query_params.get("list", "paris")
+        return GroceryItem.objects.filter(list_name=list_name).order_by('order', 'added_at')
+
     def perform_create(self, serializer):
-        item = serializer.save()
-        # Save in history
+        list_name = self.request.data.get("list_name", "paris")
+        item = serializer.save(list_name=list_name)
+        # Ajouter à l’historique global
         GroceryHistory.objects.update_or_create(name=item.name)
+
 
 class GroceryHistoryListView(generics.ListAPIView):
     serializer_class = GroceryHistorySerializer
@@ -43,10 +48,10 @@ class GroceryHistoryDeleteView(generics.DestroyAPIView):
 @api_view(['POST'])
 def reorder_items(request):
     """
-    Attend : {"ids": [id1, id2, id3, ...]}
-    Met à jour le champ 'order' de chaque item.
+    Attend : {"ids": [id1, id2, ...], "list": "paris"}
     """
     ids = request.data.get("ids", [])
+    list_name = request.data.get("list", "paris")
     for position, item_id in enumerate(ids):
-        GroceryItem.objects.filter(id=item_id).update(order=position)
+        GroceryItem.objects.filter(id=item_id, list_name=list_name).update(order=position)
     return Response({"status": "ok"})

@@ -1,5 +1,6 @@
 import React, { useEffect, useState, useRef } from "react";
 
+import { v4 as uuidv4 } from "uuid";
 import {
   DndContext,
   closestCenter,
@@ -117,7 +118,10 @@ function App() {
   const [items, setItems] = useState([]);
   const [input, setInput] = useState("");
   const [suggestions, setSuggestions] = useState([]);
+  const [activeTab, setActiveTab] = useState("paris"); // <-- Onglet actif
   const inputRef = useRef();
+
+  const [isOnline, setIsOnline] = useState(navigator.onLine);
   const [showHistory, setShowHistory] = useState(false);
   const [fullHistory, setFullHistory] = useState([]);
   const [toast, setToast] = useState(null);
@@ -131,152 +135,193 @@ function App() {
     })
   );
 
+  // --- Online/offline detection ---
   useEffect(() => {
-    fetch(`${API}/items/`)
-      .then((res) => res.json())
-      .then(setItems);
+    const goOnline = () => setIsOnline(true);
+    const goOffline = () => setIsOnline(false);
+    window.addEventListener("online", goOnline);
+    window.addEventListener("offline", goOffline);
+    return () => {
+      window.removeEventListener("online", goOnline);
+      window.removeEventListener("offline", goOffline);
+    };
   }, []);
 
+  // --- Offline queue processing ---
   useEffect(() => {
-    if (input.trim().length > 0) {
-      fetch(`${API}/history/?q=${input.trim()}`)
-        .then((res) => res.json())
-        .then(setSuggestions);
-    } else {
-      setSuggestions([]);
-    }
-  }, [input]);
+    if (!isOnline) return;
+    const queue = JSON.parse(localStorage.getItem("offlineQueue") || "[]");
+    queue.forEach(async (action) => {
+      try {
+        switch (action.type) {
+          case "ADD_ITEM":
+            await fetch(`${API}/items/`, {
+              method: "POST",
+              headers: { "Content-Type": "application/json" },
+              body: JSON.stringify(action.payload),
+            });
+            break;
+          case "DELETE_ITEM":
+            await fetch(`${API}/items/${action.payload.id}/`, { method: "DELETE" });
+            break;
+          case "TOGGLE_CHECKED":
+            await fetch(`${API}/items/${action.payload.id}/`, {
+              method: "PATCH",
+              headers: { "Content-Type": "application/json" },
+              body: JSON.stringify({ checked: action.payload.checked }),
+            });
+            break;
+          case "REORDER":
+            await fetch(`${API}/items/reorder/`, {
+              method: "POST",
+              headers: { "Content-Type": "application/json" },
+              body: JSON.stringify({ ids: action.payload.ids, list: action.payload.list }),
+            });
+            break;
+          case "HISTORY_ADD":
+            await fetch(`${API}/items/`, {
+              method: "POST",
+              headers: { "Content-Type": "application/json" },
+              body: JSON.stringify(action.payload),
+            });
+            break;
+          case "HISTORY_DELETE":
+            await fetch(`${API}/history/${action.payload.id}/`, { method: "DELETE" });
+            break;
+          default:
+            break;
+        }
+      } catch (e) {
+        console.log("Erreur replay offline action:", e);
+      }
+    });
+    localStorage.removeItem("offlineQueue");
+    fetchItems();
+    fetchFullHistory();
+  }, [isOnline, activeTab]);
+
+  const enqueueOfflineAction = (action) => {
+    const queue = JSON.parse(localStorage.getItem("offlineQueue") || "[]");
+    queue.push(action);
+    localStorage.setItem("offlineQueue", JSON.stringify(queue));
+  };
+
+  const fetchItems = () => {
+    fetch(`${API}/items/?list=${activeTab}`)
+      .then((res) => res.json())
+      .then(setItems);
+  };
+
+  useEffect(() => {
+    fetchItems();
+  }, [activeTab]);
 
   const fetchFullHistory = () => {
     fetch(`${API}/historyall/`)
       .then((res) => res.json())
-      .then((data) => setFullHistory(data));
+      .then(setFullHistory);
   };
 
-  const showToast = (message) => {
-    setToast(message);
+  const showToast = (msg) => {
+    setToast(msg);
     setTimeout(() => setToast(null), 2000);
   };
 
   const addItem = (e) => {
     e.preventDefault();
-    if (input.trim() === "") return;
-    if (
-      items.some(
-        (item) => item.name.toLowerCase() === input.trim().toLowerCase()
-      )
-    ) {
-      alert("Cet article est déjà dans la liste !");
+    if (!input.trim()) return;
+    // Bloquer doublon
+    if (items.some((i) => i.name.toLowerCase() === input.trim().toLowerCase() && i.list_name === activeTab)) {
+      showToast("Cet article est déjà dans la liste !");
       return;
     }
+    const payload = { name: input, list_name: activeTab };
+
+    // Crée un id temporaire unique pour le DnD
+    const tempId = uuidv4();
+    const tempItem = {
+      ...payload,
+      id: tempId,           // id stable pour DnD
+      checked: false,
+      added_at: new Date().toISOString(),
+      serverId: null        // ici on stockera l'id backend
+    };
+
+    setItems([...items, tempItem]);
+    setInput("");
+    setSuggestions([]);
+
+    if (!isOnline) {
+      enqueueOfflineAction({ type: "ADD_ITEM", payload });
+      showToast("Article ajouté offline !");
+      return;
+    }
+  
+    // POST vers le backend
     fetch(`${API}/items/`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ name: input }),
+      body: JSON.stringify(payload),
     })
-      .then((res) => {
-        if (!res.ok) {
-          return res.json().then((err) => {
-            throw err;
-          });
-        }
-        return res.json();
-      })
-      .then((data) => {
-        setItems([...items, data]);
-        setInput("");
-        setSuggestions([]);
+      .then(res => res.json())
+      .then(data => {
+        // Ne change pas l'id, juste stocke l'id réel pour le backend
+        setItems(prev => prev.map(i =>
+          i.id === tempId ? { ...i, serverId: data.id } : i
+        ));
         showToast(`Article ${data.name} ajouté !`);
-        inputRef.current.focus();
-      })
-      .catch((err) => {
-        alert(
-          err?.name?.[0] ||
-            "Erreur lors de l’ajout. L’article est peut-être déjà présent."
-        );
       });
   };
 
   const deleteItem = (id) => {
-    fetch(`${API}/items/${id}/`, { method: "DELETE" }).then(() => {
-      setItems(items.filter((i) => i.id !== id));
-    });
-  };
-
-  const addItemFromHistory = (name) => {
-    if (
-      items.some(
-        (item) => item.name.toLowerCase() === name.trim().toLowerCase()
-      )
-    ) {
-      alert("Cet article est déjà dans la liste !");
+    setItems(items.filter((i) => i.id !== id));
+    if (!isOnline) {
+      enqueueOfflineAction({ type: "DELETE_ITEM", payload: { id } });
       return;
     }
-    fetch(`${API}/items/`, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ name }),
-    })
-      .then((res) => {
-        if (!res.ok) {
-          return res.json().then((err) => {
-            throw err;
-          });
-        }
-        return res.json();
-      })
-      .then((data) => {
-        setItems([...items, data]);
-        showToast(`Article ${data.name} ajouté !`);
-      })
-      .catch((err) => {
-        alert(
-          err?.name?.[0] ||
-            "Erreur lors de l’ajout. L’article est peut-être déjà présent."
-        );
-      });
+    fetch(`${API}/items/${id}/`, { method: "DELETE" });
   };
 
   const toggleChecked = (id, checked) => {
+    setItems(items.map((i) => (i.id === id ? { ...i, checked: !checked } : i)));
+    if (!isOnline) {
+      enqueueOfflineAction({ type: "TOGGLE_CHECKED", payload: { id, checked: !checked } });
+      return;
+    }
     fetch(`${API}/items/${id}/`, {
       method: "PATCH",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ checked: !checked }),
-    })
-      .then((res) => res.json())
-      .then((updated) => {
-        setItems(items.map((item) => (item.id === id ? updated : item)));
-      });
+    });
   };
 
   const deleteAllChecked = () => {
-    const checkedItems = items.filter((item) => item.checked);
-    Promise.all(
-      checkedItems.map((item) =>
-        fetch(`${API}/items/${item.id}/`, { method: "DELETE" })
-      )
-    ).then(() => {
-      setItems(items.filter((item) => !item.checked));
+    const checkedItems = items.filter((i) => i.checked);
+    setItems(items.filter((i) => !i.checked));
+    checkedItems.forEach((i) => {
+      if (!isOnline) {
+        enqueueOfflineAction({ type: "DELETE_ITEM", payload: { id: i.id } });
+      } else {
+        fetch(`${API}/items/${i.id}/`, { method: "DELETE" });
+      }
     });
-  };
-
-  const handleSuggestion = (name) => {
-    setInput(name);
-    setSuggestions([]);
-    inputRef.current.focus();
   };
 
   const persistOrder = (orderedItems) => {
+    if (!isOnline) {
+      enqueueOfflineAction({
+        type: "REORDER",
+        payload: { ids: orderedItems.map((i) => i.id), list: activeTab },
+      });
+      return;
+    }
     fetch(`${API}/items/reorder/`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        ids: orderedItems.map((item) => item.id),
-      }),
+      body: JSON.stringify({ ids: orderedItems.map((i) => i.id), list: activeTab }),
     });
   };
 
-  // dnd-kit: handle drag end
   const handleDragEnd = (event) => {
     const { active, over } = event;
     if (!over || active.id === over.id) return;
@@ -287,27 +332,105 @@ function App() {
     persistOrder(newItems);
   };
 
+  useEffect(() => {
+    if (input.trim().length > 0) {
+      fetch(`${API}/history/?q=${input.trim()}`)
+        .then(async (res) => {
+          try { return await res.json(); } catch { return []; }
+        })
+        .then(setSuggestions);
+    } else setSuggestions([]);
+  }, [input]);
+
+  const handleSuggestion = (name) => {
+    setInput(name);
+    setSuggestions([]);
+    inputRef.current.focus();
+  };
+
+  const addItemFromHistory = (name) => {
+    if (items.some((i) => i.name.toLowerCase() === name.toLowerCase())) return;
+    const payload = { name, list_name: activeTab };
+    const tempId = uuidv4();
+    const tempItem = {
+      ...payload,
+      id: tempId,
+      checked: false,
+      added_at: new Date().toISOString(),
+      serverId: null
+    };
+
+    setItems([...items, tempItem]);
+    showToast(`Article ${name} ajouté!`)
+
+    if (!isOnline) {
+      enqueueOfflineAction({ type: "HISTORY_ADD", payload });
+      return;
+    }
+  
+    fetch(`${API}/items/`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(payload),
+    })
+    .then(res => res.json())
+    .then(data => {
+      setItems(prev => prev.map(i =>
+        i.id === tempId ? { ...i, serverId: data.id } : i
+      ));
+    });
+  };
+
+  const deleteFromHistory = (id) => {
+    setFullHistory(fullHistory.filter((x) => x.id !== id));
+    if (!isOnline) {
+      enqueueOfflineAction({ type: "HISTORY_DELETE", payload: { id } });
+      return;
+    }
+    fetch(`${API}/history/${id}/`, { method: "DELETE" });
+  };
+
   return (
-    <div
-      style={{
-        maxWidth: 500,
-        margin: "40px auto",
-        fontFamily: "sans-serif",
-        padding: "0 4vw",
-      }}
-    >
-      <h1
-        style={{ textAlign: "center", fontWeight: 300, letterSpacing: "2px" }}
-      >
-        CosShop 🛒
-      </h1>
+    <div style={{ maxWidth: 500, margin: "40px auto", fontFamily: "sans-serif", padding: "0 4vw" }}>
+      <h1 style={{ textAlign: "center", fontWeight: 300, letterSpacing: "2px" }}>CosShop 🛒</h1>
+
+      {/* Onglets */}
+      <div style={{ display: "flex", gap: 12, justifyContent: "center", marginBottom: 16 }}>
+        <button
+          onClick={() => setActiveTab("paris")}
+          style={{
+            padding: "6px 16px",
+            borderRadius: 8,
+            border: "none",
+            background: activeTab === "paris" ? "#222" : "#f1f1f1",
+            color: activeTab === "paris" ? "#fff" : "#222",
+            cursor: "pointer",
+          }}
+        >
+          Paris
+        </button>
+        <button
+          onClick={() => setActiveTab("saussaye")}
+          style={{
+            padding: "6px 16px",
+            borderRadius: 8,
+            border: "none",
+            background: activeTab === "saussaye" ? "#222" : "#f1f1f1",
+            color: activeTab === "saussaye" ? "#fff" : "#222",
+            cursor: "pointer",
+          }}
+        >
+          Saussaye
+        </button>
+      </div>
+
+      {/* Formulaire */}
       <form onSubmit={addItem} style={{ display: "flex", marginBottom: 16 }}>
         <input
           ref={inputRef}
           type="text"
           value={input}
           placeholder="Ajouter un article..."
-          autoFocus
           onChange={(e) => setInput(e.target.value)}
           style={{
             flex: 1,
@@ -334,32 +457,28 @@ function App() {
           +
         </button>
       </form>
+
+      {/* Suggestions */}
       {suggestions.length > 0 && (
-        <ul
-          style={{
-            background: "#fff",
-            boxShadow: "0 2px 8px #eee",
-            borderRadius: 8,
-            margin: 0,
-            marginBottom: 16,
-            padding: 8,
-            listStyle: "none",
-            position: "relative",
-            zIndex: 10,
-          }}
-        >
+        <ul style={{ background: "#ddd", boxShadow: "0 2px 8px #eee", borderRadius: 8, marginBottom: 16, padding: 8, listStyle: "none" }}>
           {suggestions.map((s) => (
-            <li
-              key={s.id}
-              onClick={() => handleSuggestion(s.name)}
-              style={{ padding: "8px 4px", cursor: "pointer" }}
-            >
-              {s.name}
-            </li>
+            <li key={s.id} onClick={() => handleSuggestion(s.name)} style={{ padding: 8, cursor: "pointer" }}>{s.name}</li>
           ))}
         </ul>
       )}
 
+      {/* Liste */}
+      <DndContext sensors={sensors} collisionDetection={closestCenter} onDragEnd={handleDragEnd}>
+        <SortableContext items={items.map((i) => i.id)} strategy={verticalListSortingStrategy}>
+          <ul style={{ padding: 0, listStyle: "none" }}>
+            {items.map((item) => (
+              <SortableItem key={item.id} item={item} toggleChecked={toggleChecked} deleteItem={deleteItem} />
+            ))}
+          </ul>
+        </SortableContext>
+      </DndContext>
+
+      {/* Bouton de suppression des coches */}
       {items.some((item) => item.checked) && (
         <button
           onClick={deleteAllChecked}
@@ -375,32 +494,9 @@ function App() {
             width: "100%",
           }}
         >
-          Delete all checked.
+          Delete all checked
         </button>
       )}
-
-      {/* DRAG & DROP */}
-      <DndContext
-        sensors={sensors}
-        collisionDetection={closestCenter}
-        onDragEnd={handleDragEnd}
-      >
-        <SortableContext
-          items={items.map((i) => i.id)}
-          strategy={verticalListSortingStrategy}
-        >
-          <ul style={{ padding: 0, listStyle: "none" }}>
-            {items.map((item) => (
-              <SortableItem
-                key={item.id}
-                item={item}
-                toggleChecked={toggleChecked}
-                deleteItem={deleteItem}
-              />
-            ))}
-          </ul>
-        </SortableContext>
-      </DndContext>
 
       <button
         onClick={() => {
@@ -423,6 +519,7 @@ function App() {
         Voir l’historique
       </button>
 
+      {/* Toast, overlay historique, etc.*/}
       {showHistory && (
         <div
           style={{
@@ -512,37 +609,7 @@ function App() {
                         {formatDate(h.last_added)}
                       </div>
                     </span>
-                    <button
-                      onClick={(e) => {
-                        e.stopPropagation();
-                        if (
-                          window.confirm(
-                            "Supprimer cet article de l'historique ?"
-                          )
-                        ) {
-                          fetch(`${API}/history/${h.id}/`, {
-                            method: "DELETE",
-                          }).then(() => {
-                            setFullHistory(
-                              fullHistory.filter((x) => x.id !== h.id)
-                            );
-                            showToast("Article supprimé de l'historique !");
-                          });
-                        }
-                      }}
-                      style={{
-                        background: "none",
-                        border: "none",
-                        color: "#cc2b2b",
-                        fontSize: 22,
-                        cursor: "pointer",
-                        marginLeft: 10,
-                        lineHeight: 1,
-                      }}
-                      title="Supprimer de l'historique"
-                    >
-                      🗑️
-                    </button>
+                    <button onClick={e=>{e.stopPropagation(); if(window.confirm("Supprimer cet article de l'historique ?")) deleteFromHistory(h.id);}} style={{background:"none",border:"none",color:"#cc2b2b",fontSize:22,cursor:"pointer",marginLeft:10,lineHeight:1}} title="Supprimer de l'historique">🗑️</button>
                   </li>
                 ))
               )}
